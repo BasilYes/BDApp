@@ -1,0 +1,1 @@
+C:\Users\What\Desktop\Проект\imgui\examples\example_glfw_opengl3\Release\example_glfw_opengl3.exe

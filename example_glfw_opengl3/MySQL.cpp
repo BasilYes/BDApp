@@ -1,0 +1,265 @@
+#include "MySQL.h"
+
+#ifndef _DEBUG
+
+/* Standard C++ includes */
+#include <stdlib.h>
+#include <iostream>
+
+/*
+  Include directly the different
+  headers from cppconn/ and mysql_driver.h + mysql_util.h
+  (and mysql_connection.h). This will reduce your build time!
+*/
+#include "mysql_connection.h"
+
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
+
+
+namespace MySQL
+{
+    sql::Driver* driver;
+    sql::Connection* con;
+
+    void init_mysql()
+    {
+        try
+        {
+            /* Create a connection */
+            driver = get_driver_instance();
+            con = driver->connect("tcp://127.0.0.1:3307", "root", "1234567890");
+            /* Connect to the MySQL test database */
+            con->setSchema("clock_creation");
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
+    }
+
+    table mysql_request(std::vector<column>& columns, std::string request, std::string table_name)
+    {
+        std::cout << request << std::endl;
+        sql::Statement* stmt;
+        sql::ResultSet* res;
+
+        table out;
+        out.name = table_name;
+        out.row_count = 0;
+        out.columns = columns;
+
+        for (column& col : columns)
+        {
+            switch (col.type)
+            {
+            case INT:
+                col.id = out.int_columns.size();
+                out.int_columns.push_back(std::vector<int>{});
+                break;
+            case STR:
+                col.id = out.str_columns.size();
+                out.str_columns.push_back(std::vector<std::string>{});
+                break;
+            }
+        }
+
+        stmt = con->createStatement();
+        res = stmt->executeQuery(request);
+
+        while (res->next())
+        {
+            for (column& col : columns)
+            {
+                switch (col.type)
+                {
+                case INT:
+                    out.int_columns[col.id].push_back(res->getInt(col.name));
+                    break;
+                case STR:
+                    out.str_columns[col.id].push_back(std::string(res->getString(col.name)));
+                    break;
+                }
+            }
+            out.row_count++;
+        }
+
+        return out;
+    }
+
+    table get_table(std::vector<column>& columns, std::string table_name)
+    {
+        try
+        {
+            std::string request{columns[0].name};
+            for (int i = 1; i < columns.size(); i++)
+                request += std::string(", ") + columns[i].name;
+            request = std::string("SELECT ") + request + " FROM " + table_name + ";";
+            
+            return mysql_request(columns, request, table_name);
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
+    }
+    table get_search_in_table(std::vector<column>& columns, std::string table_name, std::vector<char*> buffers)
+    {
+        std::string request{ columns[0].name };
+        std::string like_buff;
+        for (int i = 1; i < columns.size(); i++)
+            request += std::string(", ") + columns[i].name;
+
+        bool buff_usage = false;
+
+        for (int i = 0; i < columns.size(); i++)
+        {
+            if (std::string(buffers[i]) != "")
+            {
+                switch (columns[i].type)
+                {
+                case INT:
+                    if (buff_usage)
+                        like_buff += " AND ";
+                    like_buff += std::string(" ") + columns[i].name + " = " + buffers[i];
+                    break;
+                case STR:
+                    if (buff_usage)
+                        like_buff += " AND ";
+                    like_buff += std::string(" ") + columns[i].name + " LIKE \'%" + buffers[i] + "%\'";
+                    break;
+                }
+                buff_usage = true;
+            }
+        }
+
+        if (buff_usage)
+            request = std::string("SELECT ") + request + " FROM " + table_name + " WHERE" + like_buff + ";";
+        else
+            request = std::string("SELECT ") + request + " FROM " + table_name + ";";
+
+        return mysql_request(columns, request, table_name);
+    }
+    table delete_from_table(std::vector<column>& columns, table& tabl, int item_id)
+    {
+        try
+        {
+            std::string request = std::string("DELETE FROM ") + tabl.name + " WHERE";
+
+            bool buff_usage = false;
+
+            for (column& col : columns)
+            {
+                switch (col.type)
+                {
+                case INT:
+                    if (buff_usage)
+                        request += " AND ";
+                    request += std::string(" ") + col.name + " = " + std::to_string(tabl.int_columns[col.id][item_id]);
+                    break;
+                }
+                buff_usage = true;
+            }
+
+            std::cout << request << std::endl;
+            sql::Statement* stmt;
+            stmt = con->createStatement();
+            stmt->execute(request);
+
+            return get_table(columns, tabl.name);
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
+    }
+}
+
+using namespace std;
+
+int func(void)
+{
+    cout << endl;
+    cout << "Running 'SELECT 'Hello World!' » AS _message'..." << endl;
+
+    try {
+        sql::Driver* driver;
+        sql::Connection* con;
+        sql::Statement* stmt;
+        sql::ResultSet* res;
+
+        /* Create a connection */
+        driver = get_driver_instance();
+        con = driver->connect("tcp://127.0.0.1:3307", "root", "1234567890");
+        /* Connect to the MySQL test database */
+        con->setSchema("forum");
+
+        stmt = con->createStatement();
+        res = stmt->executeQuery("SELECT * FROM posts");
+        while (res->next()) {
+            cout << "\t" << res->getInt("id_author");
+            //res->getInt("id_posts")
+            //cout << "\t... MySQL replies: ";
+            ///* Access column data by alias or column name */
+            //cout << res->getString("_message") << endl;
+            //cout << "\t... MySQL says it again: ";
+            ///* Access column data by numeric offset, 1 is the first column */
+            //cout << res->getString(1) << endl;
+        }
+        delete res;
+        delete stmt;
+        delete con;
+
+    }
+    catch (sql::SQLException& e) {
+        cout << "# ERR: SQLException in " << __FILE__;
+        cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << endl;
+        cout << "# ERR: " << e.what();
+        cout << " (MySQL error code: " << e.getErrorCode();
+        cout << ", SQLState: " << e.getSQLState() << " )" << endl;
+    }
+
+    cout << endl;
+
+    return EXIT_SUCCESS;
+}
+
+
+#else
+
+namespace MySQL
+{
+    table get_table(std::vector<column>& columns, std::string table_name)
+    {
+        table out;
+        for (column& col : columns)
+        {
+            switch (col.type)
+            {
+            case INT:
+                col.id = out.int_columns.size();
+                out.int_columns.push_back(std::vector<int>{1, 2, 3, 4, 5});
+                break;
+            case STR:
+                col.id = out.str_columns.size();
+                out.str_columns.push_back(std::vector<std::string>{"1", "2", "3", "4", "5"});
+                break;
+            }
+        }
+        out.row_count = 5;
+        out.columns = columns;
+        return out;
+    }
+}
+#endif // !_DEBUG
