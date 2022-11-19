@@ -13,8 +13,8 @@ namespace MySQL
     struct column
     {
         int id;
-        std::string name;
-        std::string sub_name;
+        std::string request_name;
+        std::string printed_name;
         column_type type;
     };
     struct key

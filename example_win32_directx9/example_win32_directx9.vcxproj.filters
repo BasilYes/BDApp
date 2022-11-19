@@ -34,6 +34,12 @@
     <ClCompile Include="..\..\imgui_widgets.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
+    <ClCompile Include="MyApplication.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
+    <ClCompile Include="MySQL.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\imconfig.h">
@@ -49,6 +55,12 @@
       <Filter>sources</Filter>
     </ClInclude>
     <ClInclude Include="..\..\backends\imgui_impl_dx9.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClInclude Include="MyApplication.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClInclude Include="MySQL.h">
       <Filter>sources</Filter>
     </ClInclude>
   </ItemGroup>

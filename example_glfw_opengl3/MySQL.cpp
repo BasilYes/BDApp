@@ -79,10 +79,10 @@ namespace MySQL
                 switch (col.type)
                 {
                 case INT:
-                    out.int_columns[col.id].push_back(res->getInt(col.name));
+                    out.int_columns[col.id].push_back(res->getInt(col.request_name));
                     break;
                 case STR:
-                    out.str_columns[col.id].push_back(std::string(res->getString(col.name)));
+                    out.str_columns[col.id].push_back(std::string(res->getString(col.request_name)));
                     break;
                 }
             }
@@ -96,9 +96,9 @@ namespace MySQL
     {
         try
         {
-            std::string request{columns[0].name};
+            std::string request{columns[0].request_name};
             for (int i = 1; i < columns.size(); i++)
-                request += std::string(", ") + columns[i].name;
+                request += std::string(", ") + columns[i].request_name;
             request = std::string("SELECT ") + request + " FROM " + table_name + ";";
             
             return mysql_request(columns, request, table_name);
@@ -113,10 +113,10 @@ namespace MySQL
     }
     table get_search_in_table(std::vector<column>& columns, std::string table_name, std::vector<char*> buffers)
     {
-        std::string request{ columns[0].name };
+        std::string request{ columns[0].request_name };
         std::string like_buff;
         for (int i = 1; i < columns.size(); i++)
-            request += std::string(", ") + columns[i].name;
+            request += std::string(", ") + columns[i].request_name;
 
         bool buff_usage = false;
 
@@ -129,12 +129,12 @@ namespace MySQL
                 case INT:
                     if (buff_usage)
                         like_buff += " AND ";
-                    like_buff += std::string(" ") + columns[i].name + " = " + buffers[i];
+                    like_buff += std::string(" ") + columns[i].request_name + " = " + buffers[i];
                     break;
                 case STR:
                     if (buff_usage)
                         like_buff += " AND ";
-                    like_buff += std::string(" ") + columns[i].name + " LIKE \'%" + buffers[i] + "%\'";
+                    like_buff += std::string(" ") + columns[i].request_name + " LIKE \'%" + buffers[i] + "%\'";
                     break;
                 }
                 buff_usage = true;
@@ -163,7 +163,7 @@ namespace MySQL
                 case INT:
                     if (buff_usage)
                         request += " AND ";
-                    request += std::string(" ") + col.name + " = " + std::to_string(tabl.int_columns[col.id][item_id]);
+                    request += std::string(" ") + col.request_name + " = " + std::to_string(tabl.int_columns[col.id][item_id]);
                     break;
                 }
                 buff_usage = true;

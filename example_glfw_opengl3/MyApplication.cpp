@@ -114,7 +114,7 @@ namespace MyApp
             if (ImGui::BeginTable("table1", current_table.columns.size()+1, flags))
             {
                 for (MySQL::column& column : current_table.columns)
-                    ImGui::TableSetupColumn(column.sub_name.c_str(), ImGuiTableColumnFlags_WidthFixed);
+                    ImGui::TableSetupColumn(column.printed_name.c_str(), ImGuiTableColumnFlags_WidthFixed);
                 ImGui::TableSetupColumn(u8"Действие", ImGuiTableColumnFlags_WidthStretch);
 
                 //ImGui::TableSetupColumn("BBB", ImGuiTableColumnFlags_WidthFixed);
