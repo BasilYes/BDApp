@@ -45,83 +45,94 @@ namespace MySQL
 
     table mysql_request(std::vector<column>& columns, std::string request, std::string table_name)
     {
-        std::cout << request << std::endl;
-        sql::Statement* stmt;
-        sql::ResultSet* res;
-
-        table out;
-        out.name = table_name;
-        out.row_count = 0;
-        out.columns = columns;
-
-        for (column& col : columns)
+        try
         {
-            switch (col.type)
-            {
-            case INT:
-                col.id = out.int_columns.size();
-                out.int_columns.push_back(std::vector<int>{});
-                break;
-            case STR:
-                col.id = out.str_columns.size();
-                out.str_columns.push_back(std::vector<std::string>{});
-                break;
-            case KEY:
-            {
-                table t;
+            std::cout << request << std::endl;
+            sql::Statement* stmt;
+            sql::ResultSet* res;
 
-                col.id = out.int_key_columns.size();
-                out.int_key_columns.push_back(std::vector<int>{});
-                out.str_key_columns.push_back(std::vector<std::string>{});
+            table out;
+            out.name = table_name;
+            out.row_count = 0;
+            out.columns = columns;
 
-                t = mysql_request(std::vector<MySQL::column>
-                {
-                    MySQL::column{ 0, col.column_name, u8"", u8"", u8"", MySQL::INT },
-                    MySQL::column{ 0, col.request_name, u8"", u8"", u8"", MySQL::STR }
-                },
-                    std::string("SELECT ") + col.column_name + ", " + col.request_name + " FROM " + col.table,
-                    col.table
-                );
-
-                out.int_content_columns.push_back(t.int_columns[0]);
-                out.str_content_columns.push_back(t.str_columns[0]);
-            }
-                break;
-            }
-        }
-
-        stmt = con->createStatement();
-        res = stmt->executeQuery(request);
-
-        while (res->next())
-        {
             for (column& col : columns)
             {
                 switch (col.type)
                 {
                 case INT:
-                    out.int_columns[col.id].push_back(res->getInt(col.request_name));
+                    col.id = out.int_columns.size();
+                    out.int_columns.push_back(std::vector<int>{});
                     break;
                 case STR:
-                    out.str_columns[col.id].push_back(std::string(res->getString(col.request_name)));
+                    col.id = out.str_columns.size();
+                    out.str_columns.push_back(std::vector<std::string>{});
                     break;
                 case KEY:
-                    out.str_key_columns[col.id].push_back(std::string(res->getString(col.request_name)));
-                    out.int_key_columns[col.id].push_back(res->getInt(col.column_name));
-                    break;
+                {
+                    table t;
+
+                    col.id = out.int_key_columns.size();
+                    out.int_key_columns.push_back(std::vector<int>{});
+                    out.str_key_columns.push_back(std::vector<std::string>{});
+
+                    t = mysql_request(std::vector<MySQL::column>
+                    {
+                        MySQL::column{ 0, col.column_name, u8"", u8"", u8"", MySQL::INT },
+                            MySQL::column{ 0, col.request_name, u8"", u8"", u8"", MySQL::STR }
+                    },
+                        std::string("SELECT ") + col.column_name + ", " + col.request_name + " FROM " + col.table,
+                            col.table
+                            );
+
+                    out.int_content_columns.push_back(t.int_columns[0]);
+                    out.str_content_columns.push_back(t.str_columns[0]);
+                }
+                break;
                 }
             }
-            out.row_count++;
-        }
 
-        return out;
+            stmt = con->createStatement();
+            res = stmt->executeQuery(request);
+
+            while (res->next())
+            {
+                for (column& col : columns)
+                {
+                    switch (col.type)
+                    {
+                    case INT:
+                        out.int_columns[col.id].push_back(res->getInt(col.request_name));
+                        break;
+                    case STR:
+                        out.str_columns[col.id].push_back(std::string(res->getString(col.request_name)));
+                        break;
+                    case KEY:
+                        out.str_key_columns[col.id].push_back(std::string(res->getString(col.request_name)));
+                        out.int_key_columns[col.id].push_back(res->getInt(col.column_name));
+                        break;
+                    }
+                }
+                out.row_count++;
+            }
+
+            return out;
+
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
     }
 
     table get_table(std::vector<column>& columns, std::vector<std::string> joins, std::string table_name)
     {
         try
         {
-            std::string request{columns[0].request_name}, joins_buff;
+            std::string request{ columns[0].request_name }, joins_buff;
             for (int i = 1; i < columns.size(); i++)
             {
                 request += std::string(", ") + columns[i].request_name;
@@ -133,7 +144,7 @@ namespace MySQL
                 joins_buff += " LEFT JOIN " + join;
 
             request = std::string("SELECT ") + request + " FROM " + table_name + joins_buff + ";";
-            
+
             return mysql_request(columns, request, table_name);
         }
         catch (sql::SQLException& e) {
@@ -212,6 +223,11 @@ namespace MySQL
                         request += " AND ";
                     request += std::string(" ") + col.request_name + " = " + std::to_string(tabl.int_columns[col.id][item_id]);
                     break;
+                case KEY:
+                    if (buff_usage)
+                        request += " AND ";
+                    request += std::string(" ") + col.column_name + " = " + std::to_string(tabl.int_key_columns[col.id][item_id]);
+                    break;
                 }
                 buff_usage = true;
             }
@@ -229,6 +245,149 @@ namespace MySQL
             std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
         }
         return get_table(columns, joins, tabl.name);
+    }
+
+    table add_to_table(std::vector<column>& columns, std::vector<std::string> joins, std::string table_name, std::vector<char*> buffers, std::vector<int> keys, std::vector<int> keys_usage)
+    {
+        try
+        {
+            std::string request = std::string("INSERT INTO ") + table_name + " ";
+            std::string col_buff, val_buff;
+            bool buff_usage = false;
+
+            for (int i = 0; i < columns.size(); i++)
+            {
+                if (std::string(buffers[i]) != "")
+                {
+                    switch (columns[i].type)
+                    {
+                    case INT:
+                        if (buff_usage)
+                        {
+                            col_buff += ", ";
+                            val_buff += ", ";
+                        }
+                        col_buff += std::string(" ") + columns[i].request_name;
+                        val_buff += std::string(" ") + buffers[i];
+                        break;
+                    case STR:
+                        if (buff_usage)
+                        {
+                            col_buff += ", ";
+                            val_buff += ", ";
+                        }
+                        col_buff += std::string(" ") + columns[i].request_name;
+                        val_buff += std::string(" \'") + buffers[i] + std::string("\'");
+                        break;
+                    }
+                    buff_usage = true;
+                }
+                else if (keys_usage[i] != -1)
+                {
+                    if (buff_usage)
+                    {
+                        col_buff += ", ";
+                        val_buff += ", ";
+                    }
+                    col_buff += std::string(" ") + columns[i].column_name;
+                    val_buff += std::string(" ") + std::to_string(keys[i]);
+                    buff_usage = true;
+                }
+            }
+
+            request += "(" + col_buff + ") VALUES (" + val_buff + ");";
+
+            std::cout << request << std::endl;
+            sql::Statement* stmt;
+            stmt = con->createStatement();
+            stmt->execute(request);
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
+        return get_table(columns, joins, table_name);
+    }
+    table edit_row(std::vector<column>& columns, std::vector<std::string> joins, std::string table_name, std::vector<char*> buffers, std::vector<int> keys, std::vector<int> keys_usage, table& old_table, int row)
+    {
+        try
+        {
+            std::string request = std::string("UPDATE ") + table_name + " SET ";
+            std::string set_buff, where_buff;
+            bool buff_usage = false;
+
+            for (int i = 0; i < columns.size(); i++)
+            {
+                if (std::string(buffers[i]) != "")
+                {
+                    switch (columns[i].type)
+                    {
+                    case INT:
+                        if (buff_usage)
+                        {
+                            set_buff += ", ";
+                        }
+                        set_buff += std::string(" ") + columns[i].request_name + " = " + buffers[i];
+                        break;
+                    case STR:
+                        if (buff_usage)
+                        {
+                            set_buff += ", ";
+                        }
+                        set_buff += std::string(" ") + columns[i].request_name + " = " + std::string(" \'") + buffers[i] + std::string("\'");
+                        break;
+                    }
+                    buff_usage = true;
+                }
+                else if (keys_usage[i] != -1)
+                {
+                    if (buff_usage)
+                    {
+                        set_buff += ", ";
+                    }
+                    set_buff += std::string(" ") + columns[i].column_name + " = " + std::to_string(keys[i]);
+                    buff_usage = true;
+                }
+            }
+
+            buff_usage = false;
+
+            for (column& col : columns)
+            {
+                switch (col.type)
+                {
+                case INT:
+                    if (buff_usage)
+                        where_buff += " AND ";
+                    where_buff += std::string(" ") + col.request_name + " = " + std::to_string(old_table.int_columns[col.id][row]);
+                    break;
+                case KEY:
+                    if (buff_usage)
+                        where_buff += " AND ";
+                    where_buff += std::string(" ") + col.column_name + " = " + std::to_string(old_table.int_key_columns[col.id][row]);
+                    break;
+                }
+                buff_usage = true;
+            }
+
+            request += set_buff + " WHERE " + where_buff;
+
+            std::cout << request << std::endl;
+            sql::Statement* stmt;
+            stmt = con->createStatement();
+            stmt->execute(request);
+        }
+        catch (sql::SQLException& e) {
+            std::cout << "# ERR: SQLException in " << __FILE__;
+            std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+            std::cout << "# ERR: " << e.what();
+            std::cout << " (MySQL error code: " << e.getErrorCode();
+            std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+        }
+        return get_table(columns, joins, table_name);
     }
 }
 
@@ -301,8 +460,8 @@ namespace MySQL
                 col.id = out.str_columns.size();
                 out.str_columns.push_back(std::vector<std::string>{"1", "2", "3", "4", "5"});
                 break;
-            }
-        }
+    }
+}
         out.row_count = 5;
         out.columns = columns;
         return out;
