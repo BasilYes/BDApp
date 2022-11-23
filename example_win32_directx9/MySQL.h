@@ -33,26 +33,31 @@ namespace MySQL
     };
 
     table mysql_request(std::vector<column>& columns, std::string request, std::string table_name);
-    table get_table(std::vector<column>& columns, std::vector<std::string> joins, std::string table_name);
+
+    table get_table(std::vector<column>& columns, std::vector<std::string> joins, std::string table_name, int column_sort, bool direction);
     table get_search_in_table(std::vector<column>& columns,
         std::vector<std::string> joins,
         std::string table_name,
         std::vector<char*> buffers,
         std::vector<int> keys,
-        std::vector<int> keys_usage);
+        std::vector<int> keys_usage, int column_sort, bool direction);
+
     table add_to_table(std::vector<column>& columns,
         std::vector<std::string> joins,
         std::string table_name,
         std::vector<char*> buffers,
         std::vector<int> keys,
-        std::vector<int> keys_usage);
+        std::vector<int> keys_usage, int column_sort, bool direction);
     table edit_row(std::vector<column>& columns,
         std::vector<std::string> joins,
         std::string table_name,
         std::vector<char*> buffers,
         std::vector<int> keys,
         std::vector<int> keys_usage,
-        table& old_table, int row);
-    table delete_from_table(std::vector<column>& columns, std::vector<std::string> joins, table& tabl, int item_id);
+        table& old_table, int row, int column_sort, bool direction);
+    table delete_from_table(std::vector<column>& columns, std::vector<std::string> joins, table& tabl, int item_id, int column_sort, bool direction);
+    table resort_table(std::vector<column>& columns, std::string table_name, int column_sort, bool direction);
+    table custom_mysql_request(std::string request);
+    table custom_mysql_proc(std::string request);
     void init_mysql();
 }

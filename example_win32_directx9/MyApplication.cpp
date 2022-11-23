@@ -19,7 +19,10 @@ namespace MyApp
             addition,
             remove,
             changing,
-            change
+            change,
+            refresh_table,
+            select,
+            noselect
         } type;
         int row;
     };
@@ -32,6 +35,9 @@ namespace MyApp
     };
 
     bool show_interact = true;
+    bool show_request = false;
+    int sorted_column = 0;
+    bool sort_derection;
     std::vector<table> tables;
     std::vector<procedure> procedures;
     MySQL::table current_table;
@@ -44,7 +50,7 @@ namespace MyApp
     {
         table& tab = *current_table_ref;
         for (char* buff : buffers)
-            delete buff;
+            delete[] buff;
         buffers.resize(tab.columns.size());
         current_keys.resize(tab.columns.size());
         for (int i = 0; i < tab.columns.size(); i++)
@@ -54,6 +60,14 @@ namespace MyApp
         }
     }
 
+    std::vector<std::string> comand_parts{
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "GROUP BY",
+    "ORDER BY",
+    };
+    char rec_text[1000] {""};
     void process_request()
     {
         if (current_request.type)
@@ -70,18 +84,42 @@ namespace MyApp
             switch (current_request.type)
             {
             case request::search:
-                current_table = MySQL::get_search_in_table(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys);
+                current_table = MySQL::get_search_in_table(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys, sorted_column, sort_derection);
                 break;
             case request::addition:
-                current_table = MySQL::add_to_table(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys);
+                current_table = MySQL::add_to_table(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys, sorted_column, sort_derection);
                 refresh_buffers();
                 break;
             case request::remove:
-                current_table = MySQL::delete_from_table(current_table.columns, current_table_ref->joins, current_table, current_request.row);
+                current_table = MySQL::delete_from_table(current_table.columns, current_table_ref->joins, current_table, current_request.row, sorted_column, sort_derection);
             case request::change:
-                current_table = MySQL::edit_row(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys, current_table, current_request.row);
+                current_table = MySQL::edit_row(current_table.columns, current_table_ref->joins, current_table.name, buffers, keys, current_keys, current_table, current_request.row, sorted_column, sort_derection);
                 refresh_buffers();
-
+            case request::refresh_table:
+                current_table = MySQL::resort_table(current_table.columns, current_table.name, sorted_column, sort_derection);
+                break;
+            case request::select:
+            {
+                std::string a;
+                for (int i = 0; i < 5; i++)
+                {
+                    if (std::string(buffers[i]) != "")
+                    {
+                        a += comand_parts[i] + " " + buffers[i] + " ";
+                    }
+                }
+                current_table = MySQL::custom_mysql_request(a);
+                show_request = false;
+                show_interact = false;
+            }
+            break;
+            case request::noselect:
+            {
+                current_table = MySQL::custom_mysql_proc(rec_text);
+                show_request = false;
+                show_interact = false;
+            }
+            break;
             default:
                 break;
             }
@@ -167,6 +205,82 @@ namespace MyApp
         },
             std::vector<std::string>{}
             });
+        tables.push_back(table
+            {
+            u8"remains",
+            u8"Остатки",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_remains", u8"Номер остатков", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"workplace_name", u8"Рабочее место", u8"id_workplace", u8"workplaces", MySQL::KEY},
+            MySQL::column{1, u8"detail_name", u8"Деталь", u8"id_detail", u8"detailes", MySQL::KEY},
+            MySQL::column{1, u8"count", u8"Количество", u8"", u8"", MySQL::INT},
+        },
+            std::vector<std::string>{"workplaces USING(id_workplace)","detailes USING(id_detail)"}
+            });
+        tables.push_back(table
+            {
+            u8"workplaces",
+            u8"Рабочие места",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_workplace", u8"Номер рабочего места", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"workplace_name", u8"Наименование", u8"", u8"", MySQL::STR},
+            MySQL::column{0, u8"first_last_name", u8"Работник", u8"id_worker", u8"workers", MySQL::KEY},
+        },
+            std::vector<std::string>{"workers USING(id_worker)"}
+            });
+        tables.push_back(table
+            {
+            u8"finished_products",
+            u8"Произведенная продукция",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_finished_products", u8"Номер партии", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"watch_model_name", u8"Модель часов", u8"id_watch_model", u8"watch_model", MySQL::KEY},
+            MySQL::column{1, u8"count", u8"Количество", u8"", u8"", MySQL::INT},
+        },
+            std::vector<std::string>{"watch_model USING(id_watch_model)"}
+            });
+        tables.push_back(table
+            {
+            u8"assembly_stages",
+            u8"Стадии сборки",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_assembly_stage", u8"Номер стадии", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"assembly_stage_name", u8"Название этапа", u8"", u8"", MySQL::STR},
+        },
+            std::vector<std::string>{}
+            });
+        tables.push_back(table
+            {
+            u8"defect_type",
+            u8"Типы дефектов",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_defect_type", u8"Номер типа", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"defect_type_name", u8"Название типа", u8"", u8"", MySQL::STR},
+        },
+            std::vector<std::string>{}
+            });
+        tables.push_back(table
+            {
+            u8"defect",
+            u8"Дефектная продукция",
+            std::vector<MySQL::column>
+        {
+            MySQL::column{0, u8"id_defect", u8"Номер записи", u8"", u8"", MySQL::INT},
+            MySQL::column{0, u8"watch_model_name", u8"Модель часов", u8"id_watch_model", u8"watch_model", MySQL::KEY},
+            MySQL::column{1, u8"defect_type_name", u8"Тип дефекта", u8"id_defect_type", u8"defect_type", MySQL::KEY},
+            MySQL::column{1, u8"count", u8"Количество", u8"", u8"", MySQL::INT},
+        },
+            std::vector<std::string>{"defect_type USING(id_defect_type)", "watch_model USING(id_watch_model)"}
+            });
+
+
+
+
         procedures.push_back(procedure
             {
                 std::string(u8"Лучший работник"),
@@ -198,10 +312,13 @@ namespace MyApp
 
     void changeCurrentTable(table& tab)
     {
-        current_table = MySQL::get_table(tab.columns, tab.joins, tab.name);
+        current_table = MySQL::get_table(tab.columns, tab.joins, tab.name, 0, 0);
+        sorted_column = 0;
+        sort_derection = 0;
         current_table_ref = &tab;
 
         show_interact = true;
+        show_request = false;
 
         refresh_buffers();
     }
@@ -223,98 +340,84 @@ namespace MyApp
     {
         ImGui::Begin(u8"Данные");
 
-        static ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
+        static ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | (show_interact ? ImGuiTableFlags_Sortable : 0);
 
-        if (current_table.columns.size() > 0)
-            if (ImGui::BeginTable("table1", current_table.columns.size() + (show_interact ? 1 : 0), flags))
+        if (show_request)
+        {
+
+            ImGui::Text("SELECT");
+            ImGui::SameLine();
+            ImGui::InputTextMultiline("##0_tt", buffers[0], 99, ImVec2(200.0f, ImGui::GetTextLineHeight() * 5.0f));
+            ImGui::SameLine();
+            ImGui::Text("FROM");
+            ImGui::SameLine();
+            ImGui::InputTextMultiline("##1_tt", buffers[1], 99, ImVec2(200.0f, ImGui::GetTextLineHeight() * 5.0f));
+            ImGui::SameLine();
+            ImGui::Text("WHERE");
+            ImGui::SameLine();
+            ImGui::InputTextMultiline("##2_tt", buffers[2], 99, ImVec2(200.0f, ImGui::GetTextLineHeight() * 5.0f));
+            ImGui::SameLine();
+            ImGui::Text("GROUP BY");
+            ImGui::SameLine();
+            ImGui::InputTextMultiline("##3_tt", buffers[3], 99, ImVec2(200.0f, ImGui::GetTextLineHeight() * 5.0f));
+            ImGui::SameLine();
+            ImGui::Text("ORDER BY");
+            ImGui::SameLine();
+            ImGui::InputTextMultiline("##4_tt", buffers[4], 99, ImVec2(200.0f, ImGui::GetTextLineHeight() * 5.0f));
+            if (ImGui::Button(u8"Select", ImVec2(-FLT_MIN, 0.0f)))
             {
-                for (MySQL::column& column : current_table.columns)
-                    ImGui::TableSetupColumn(column.printed_name.c_str(), ImGuiTableColumnFlags_WidthFixed);
-                if (show_interact)
-                    ImGui::TableSetupColumn(u8"Действие", ImGuiTableColumnFlags_WidthFixed);
-
-                //ImGui::TableSetupColumn("BBB", ImGuiTableColumnFlags_WidthFixed);
-                //ImGui::TableSetupColumn("CCC", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableHeadersRow();
-                if (show_interact)
+                /*std::cout << "select ";
+                std::string a;
+                for (int i = 0; i < 5; i++)
                 {
-                    ImGui::TableNextRow();
-                    int column;
-                    for (column = 0; column < current_table.columns.size(); column++)
+                    if (std::string(buffers[i]) != "")
                     {
-                        ImGui::TableSetColumnIndex(column);
-                        switch (current_table.columns[column].type)
-                        {
-                        case MySQL::INT:
-                            ImGui::InputTextMultiline(std::to_string(column).c_str(), buffers[column], 64, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 1.5f), ImGuiInputTextFlags_CharsDecimal);
-                            break;
-                        case MySQL::STR:
-                            ImGui::InputTextMultiline(std::to_string(column).c_str(), buffers[column], 64, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 1.5f));
-                            break;
-                        case MySQL::KEY:
-                        {
-                            int id = current_table.columns[column].id;
-                            ImGui::PushItemWidth(-1);
-                            if (ImGui::BeginCombo((std::string("##combo") + std::to_string(column)).c_str(),
-                                current_keys[column] >= 0 ? current_table.str_content_columns[id][current_keys[column]].c_str() : " ",
-                                ImGuiComboFlags_NoArrowButton))
-                            {
-                                {
-                                    const bool is_selected = (current_keys[column] == -1);
-                                    if (ImGui::Selectable(" ", is_selected))
-                                        current_keys[column] = -1;
-
-                                    // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                                    if (is_selected)
-                                        ImGui::SetItemDefaultFocus();
-                                }
-                                for (int n = 0; n < current_table.str_content_columns[id].size(); n++)
-                                {
-                                    const bool is_selected = (current_keys[column] == n);
-                                    if (ImGui::Selectable(current_table.str_content_columns[id][n].c_str(), is_selected))
-                                        current_keys[column] = n;
-
-                                    // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                                    if (is_selected)
-                                        ImGui::SetItemDefaultFocus();
-                                }
-                                ImGui::EndCombo();
-                            }
-                            ImGui::PopItemWidth();
-                        }
-                        break;
-                        default:
-                            ImGui::Text("%s %d", "Error_type", column);
-                            break;
-                        }
+                        a += comand_parts[i] + " " + buffers[i] + " ";
                     }
-                    ImGui::TableSetColumnIndex(column);
-                    if (current_request.type != request::changing)
-                    {
-                        if (ImGui::Button(u8"Поиск"))
-                            current_request.type = request::search;
-                        ImGui::SameLine();
-                        if (ImGui::Button(u8"Добавить"))
-                            current_request.type = request::addition;
-                    }
-                    else
-                    {
-                        if (ImGui::Button(u8"Сохранить"))
-                            current_request.type = request::change;
-                        ImGui::SameLine();
-                        if (ImGui::Button(u8"Отмена"))
-                            current_request.type = request::norequest;
-
-                    }
-
-                    //ImGui::SameLine();
-                    //ImGui::Button(u8"Изменить");
                 }
-
-                for (int row = 0; row < current_table.row_count; row++)
+                current_table = MySQL::custom_mysql_request(a);
+                show_request = false;
+                show_interact = false;*/
+                current_request.type = request::select;
+            }
+            ImGui::InputTextMultiline("##5_tt", rec_text, 999, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 5.0f));
+            if (ImGui::Button(u8"Все кроме SELECT", ImVec2(-FLT_MIN, 0.0f)))
+            {
+                /*current_table = MySQL::custom_mysql_proc(rec_text);
+                show_request = false;
+                show_interact = false;*/
+                current_request.type = request::noselect;
+            }
+        }
+        else
+            if (current_table.columns.size() > 0)
+                if (ImGui::BeginTable("table1", current_table.columns.size() + (show_interact ? 1 : 0), flags))
                 {
-                    ImGui::TableNextRow();
+                    for (int column = 0; column < current_table.columns.size(); column++)
+                        ImGui::TableSetupColumn(current_table.columns[column].printed_name.c_str(), ImGuiTableColumnFlags_WidthFixed | (show_interact ? ImGuiTableColumnFlags_DefaultSort : 0), 0.0f, column);
+                    if (show_interact)
+                        ImGui::TableSetupColumn(u8"Действие", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort);
+
+                    if (show_interact)
+                        if (ImGuiTableSortSpecs* sorts_specs = ImGui::TableGetSortSpecs())
+                            if (sorts_specs->SpecsDirty)
+                            {
+                                if (sorts_specs->Specs->ColumnUserID != sorted_column || (sorts_specs->Specs->SortDirection != ImGuiSortDirection_Ascending) != sort_derection)
+                                {
+                                    sorted_column = sorts_specs->Specs->ColumnUserID;
+                                    sort_derection = sorts_specs->Specs->SortDirection != ImGuiSortDirection_Ascending;
+
+                                    current_request.type = request::refresh_table;
+                                }
+                                sorts_specs->SpecsDirty = false;
+                            }
+
+                    //ImGui::TableSetupColumn("BBB", ImGuiTableColumnFlags_WidthFixed);
+                    //ImGui::TableSetupColumn("CCC", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableHeadersRow();
+                    if (show_interact)
                     {
+                        ImGui::TableNextRow();
                         int column;
                         for (column = 0; column < current_table.columns.size(); column++)
                         {
@@ -322,73 +425,152 @@ namespace MyApp
                             switch (current_table.columns[column].type)
                             {
                             case MySQL::INT:
-                                ImGui::Text("%d", current_table.int_columns[current_table.columns[column].id][row]);
+                                ImGui::InputTextMultiline(std::to_string(column).c_str(), buffers[column], 64, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 1.5f), ImGuiInputTextFlags_CharsDecimal);
                                 break;
                             case MySQL::STR:
-                                ImGui::Text("%s", current_table.str_columns[current_table.columns[column].id][row].c_str());
+                                ImGui::InputTextMultiline(std::to_string(column).c_str(), buffers[column], 64, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 1.5f));
                                 break;
                             case MySQL::KEY:
-                                ImGui::Text("%s", current_table.str_key_columns[current_table.columns[column].id][row].c_str());
-                                break;
+                            {
+                                int id = current_table.columns[column].id;
+                                ImGui::PushItemWidth(-1);
+                                if (ImGui::BeginCombo((std::string("##combo") + std::to_string(column)).c_str(),
+                                    current_keys[column] >= 0 ? current_table.str_content_columns[id][current_keys[column]].c_str() : " ",
+                                    ImGuiComboFlags_NoArrowButton))
+                                {
+                                    {
+                                        const bool is_selected = (current_keys[column] == -1);
+                                        if (ImGui::Selectable(" ", is_selected))
+                                            current_keys[column] = -1;
+
+                                        // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                                        if (is_selected)
+                                            ImGui::SetItemDefaultFocus();
+                                    }
+                                    for (int n = 0; n < current_table.str_content_columns[id].size(); n++)
+                                    {
+                                        const bool is_selected = (current_keys[column] == n);
+                                        if (ImGui::Selectable(current_table.str_content_columns[id][n].c_str(), is_selected))
+                                            current_keys[column] = n;
+
+                                        // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                                        if (is_selected)
+                                            ImGui::SetItemDefaultFocus();
+                                    }
+                                    ImGui::EndCombo();
+                                }
+                                ImGui::PopItemWidth();
+                            }
+                            break;
                             default:
-                                ImGui::Text("%s %d,%d", "Error_type", column, row);
+                                ImGui::Text("%s %d", "Error_type", column);
                                 break;
                             }
                         }
-                        if (show_interact)
+                        ImGui::TableSetColumnIndex(column);
+                        if (current_request.type != request::changing)
                         {
-                            ImGui::TableSetColumnIndex(column);
-                            if (ImGui::Button((std::string(u8"Удалить##") + std::to_string(row)).c_str()))
-                            {
-                                current_request.type = request::remove;
-                                current_request.row = row;
-                            }
+                            if (ImGui::Button(u8"Поиск"))
+                                current_request.type = request::search;
                             ImGui::SameLine();
-                            if (ImGui::Button((std::string(u8"Изменить##") + std::to_string(row)).c_str()))
-                            {
-                                current_request.type = request::changing;
-                                current_request.row = row;
-                                for (int i = 0; i < current_table.columns.size(); i++)
-                                {
+                            if (ImGui::Button(u8"Добавить"))
+                                current_request.type = request::addition;
+                        }
+                        else
+                        {
+                            if (ImGui::Button(u8"Сохранить"))
+                                current_request.type = request::change;
+                            ImGui::SameLine();
+                            if (ImGui::Button(u8"Отмена"))
+                                current_request.type = request::norequest;
 
-                                    switch (current_table.columns[i].type)
+                        }
+
+                        //ImGui::SameLine();
+                        //ImGui::Button(u8"Изменить");
+                    }
+
+                    for (int row = 0; row < current_table.row_count; row++)
+                    {
+                        ImGui::TableNextRow();
+                        {
+                            int column;
+                            for (column = 0; column < current_table.columns.size(); column++)
+                            {
+                                ImGui::TableSetColumnIndex(column);
+                                switch (current_table.columns[column].type)
+                                {
+                                case MySQL::INT:
+                                    ImGui::Text("%d", current_table.int_columns[current_table.columns[column].id][row]);
+                                    break;
+                                case MySQL::STR:
+                                {
+                                    auto a = current_table.str_columns[current_table.columns[column].id][row].c_str();
+                                    ImGui::Text("%s", a);
+                                }
+                                    break;
+                                case MySQL::KEY:
+                                    ImGui::Text("%s", current_table.str_key_columns[current_table.columns[column].id][row].c_str());
+                                    break;
+                                default:
+                                    ImGui::Text("%s %d,%d", "Error_type", column, row);
+                                    break;
+                                }
+                            }
+                            if (show_interact)
+                            {
+                                ImGui::TableSetColumnIndex(column);
+                                if (ImGui::Button((std::string(u8"Удалить##") + std::to_string(row)).c_str()))
+                                {
+                                    current_request.type = request::remove;
+                                    current_request.row = row;
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button((std::string(u8"Изменить##") + std::to_string(row)).c_str()))
+                                {
+                                    current_request.type = request::changing;
+                                    current_request.row = row;
+                                    for (int i = 0; i < current_table.columns.size(); i++)
                                     {
-                                    case MySQL::INT:
-                                    {
-                                        int counter = 0;
-                                        for (char c : std::to_string(current_table.int_columns[current_table.columns[i].id][row]))
+
+                                        switch (current_table.columns[i].type)
                                         {
-                                            buffers[i][counter] = c;
-                                            counter++;
-                                        }
-                                        buffers[i][counter] = '\0';
-                                    }
-                                    break;
-                                    case MySQL::STR:
-                                    {
-                                        int counter = 0;
-                                        for (char c : current_table.str_columns[current_table.columns[i].id][row])
+                                        case MySQL::INT:
                                         {
-                                            buffers[i][counter] = c;
-                                            counter++;
+                                            int counter = 0;
+                                            for (char c : std::to_string(current_table.int_columns[current_table.columns[i].id][row]))
+                                            {
+                                                buffers[i][counter] = c;
+                                                counter++;
+                                            }
+                                            buffers[i][counter] = '\0';
                                         }
-                                        buffers[i][counter] = '\0';
-                                    }
-                                    break;
-                                    case MySQL::KEY:
-                                    {
-                                        std::vector<int>& vec = current_table.int_content_columns[current_table.columns[i].id];
-                                        current_keys[i] = std::distance(vec.begin(), std::find(vec.begin(), vec.end(), current_table.int_key_columns[current_table.columns[i].id][row]));
-                                    }
-                                    break;
+                                        break;
+                                        case MySQL::STR:
+                                        {
+                                            int counter = 0;
+                                            for (char c : current_table.str_columns[current_table.columns[i].id][row])
+                                            {
+                                                buffers[i][counter] = c;
+                                                counter++;
+                                            }
+                                            buffers[i][counter] = '\0';
+                                        }
+                                        break;
+                                        case MySQL::KEY:
+                                        {
+                                            std::vector<int>& vec = current_table.int_content_columns[current_table.columns[i].id];
+                                            current_keys[i] = std::distance(vec.begin(), std::find(vec.begin(), vec.end(), current_table.int_key_columns[current_table.columns[i].id][row]));
+                                        }
+                                        break;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    ImGui::EndTable();
                 }
-                ImGui::EndTable();
-            }
 
         ImGui::End();
     }
@@ -396,7 +578,17 @@ namespace MyApp
     void RenderProcedures()
     {
         ImGui::Begin(u8"Запросы");
-
+        if (ImGui::Button(u8"Специальный запрос", ImVec2(-FLT_MIN, 0.0f)))
+        {
+            show_request = true;
+            for (char* buff : buffers)
+                delete[] buff;
+            buffers.resize(5);
+            for (int i = 0; i < 5; i++)
+            {
+                buffers[i] = new char[100] {""};
+            }
+        }
 
         for (procedure& proc : procedures)
         {
@@ -404,6 +596,7 @@ namespace MyApp
             {
                 current_table = MySQL::mysql_request(proc.columns, proc.comand, "NONE");
                 show_interact = false;
+                show_request = false;
             }
         }
 
